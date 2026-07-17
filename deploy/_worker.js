@@ -175,8 +175,11 @@ body {
   padding: 20px 24px;
   align-items: flex-start;
   height: calc(100vh - 120px);
-  overflow: hidden;
+  overflow-x: auto;
+  overflow-y: hidden;
 }
+.board::-webkit-scrollbar { height: 6px; }
+.board::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
 
 /* ─── Column ─── */
 .column {
@@ -267,7 +270,7 @@ body {
   .header { padding: 12px 16px; }
   .header h1 { font-size: 18px; }
   .board { padding: 12px 16px; }
-  .column { min-width: 200px; }
+  .column { min-width: 260px; flex: 0 0 260px; }
 }
 </style>
 </head>
