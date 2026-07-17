@@ -5,6 +5,8 @@
 
 const KV_KEY = 'board-data';
 const VERSION_KEY = 'board-version';
+const HISTORY_KEY = 'board-history';
+const MAX_VERSIONS = 10;
 
 // Default board data
 const DEFAULT_DATA = {
@@ -282,6 +284,10 @@ body {
   <div class="header-actions">
     <span class="save-status" id="saveStatus"></span>
     <input class="search-input" type="text" placeholder="🔍 Search cards..." id="searchInput">
+    <button class="btn btn-outline" onclick="showHistoryModal()">🕓 History</button>
+    <button class="btn btn-outline" onclick="downloadBackup()">⬇ Backup</button>
+    <button class="btn btn-outline" onclick="document.getElementById('importFile').click()">⬆ Import</button>
+    <input type="file" id="importFile" accept=".json" style="display:none" onchange="importBackup(event)">
     <button class="btn btn-primary" onclick="showAddCardModal()">+ Add Card</button>
   </div>
 </div>
@@ -710,6 +716,92 @@ function formatTimeAgo(ts) {
   return new Date(ts).toLocaleDateString();
 }
 
+// ────────────────────────────── Backup / Import / History ──────────────────────────────
+function downloadBackup() {
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'kanbanana-backup-' + new Date().toISOString().slice(0, 10) + '.json';
+  a.click();
+  toast('📥 Backup downloaded');
+}
+
+async function importBackup(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  try {
+    const text = await file.text();
+    const imported = JSON.parse(text);
+    if (!imported.columns) throw new Error('Invalid format');
+    // Save with current version (will conflict if stale)
+    const resp = await fetch(API, { method: 'PUT', body: JSON.stringify({ data: imported, version }), headers: { 'Content-Type': 'application/json' } });
+    if (resp.status === 409) {
+      toast('⚠ Conflict — reloading before import');
+      await loadData();
+      // Retry once
+      const resp2 = await fetch(API, { method: 'PUT', body: JSON.stringify({ data: imported, version }), headers: { 'Content-Type': 'application/json' } });
+      if (!resp2.ok) throw new Error('Import failed');
+    } else if (!resp.ok) {
+      throw new Error('Import failed');
+    }
+    const result = await resp.status === 409 ? (await fetch(API, { method: 'PUT', body: JSON.stringify({ data: imported, version }), headers: { 'Content-Type': 'application/json' } })).json() : resp.json();
+    version = result.version;
+    data = imported;
+    render();
+    toast('✅ Backup imported');
+  } catch (e) {
+    toast('❌ Invalid backup file');
+  }
+  event.target.value = '';
+}
+
+async function showHistoryModal() {
+  try {
+    const resp = await fetch('/api/history');
+    const history = await resp.json();
+    const rows = history.length === 0
+      ? '<p style="color:#9ca3af;text-align:center;padding:20px">No history yet</p>'
+      : history.map(h => \`
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border-bottom:1px solid #e5e7eb">
+          <div>
+            <strong>v\${h.version}</strong>
+            \${h.restoredFrom ? '<span style="font-size:11px;color:#f59e0b;margin-left:6px">(restored from v' + h.restoredFrom + ')</span>' : ''}
+            <div style="font-size:12px;color:#6b7280">
+              \${new Date(h.timestamp).toLocaleString()} &middot;
+              \${h.columnCount} columns &middot;
+              \${h.cardCount} cards
+            </div>
+          </div>
+          <button class="btn btn-outline btn-sm" onclick="restoreVersion(\${h.version})">Restore</button>
+        </div>
+      \`).join('');
+    showModal(\`
+      <h2>Version History</h2>
+      <div style="max-height:400px;overflow-y:auto;margin:-4px -12px">\${rows}</div>
+      <div class="modal-actions">
+        <button class="btn btn-outline" onclick="closeModal()">Close</button>
+      </div>
+    \`);
+  } catch (e) {
+    toast('Failed to load history');
+  }
+}
+
+async function restoreVersion(v) {
+  if (!confirm(\`Restore version \${v}? Current changes will be saved as a new version.\`)) return;
+  const resp = await fetch('/api/restore', {
+    method: 'POST',
+    body: JSON.stringify({ version: v }),
+    headers: { 'Content-Type': 'application/json' }
+  });
+  if (!resp.ok) { toast('Failed to restore'); return; }
+  const result = await resp.json();
+  await loadData();
+  render();
+  closeModal();
+  toast('✅ Restored version ' + v);
+}
+
 // ────────────────────────────── Keyboard shortcuts ──────────────────────────────
 document.addEventListener('keydown', e => {
   if ((e.ctrlKey || e.metaKey) && e.key === 'k') { e.preventDefault(); document.getElementById('searchInput').focus(); }
@@ -750,10 +842,10 @@ export default {
     // ── API: Get data ──
     if (path === '/api/data' && request.method === 'GET') {
       if (!authed) return new Response('Unauthorized', { status: 401 });
-      const raw = await env.KANBAN.get(KV_KEY);
+      const currentVersion = parseInt(await env.KANBAN.get(VERSION_KEY) || '0');
+      const raw = await env.KANBAN.get(KV_KEY + '-v' + currentVersion);
       const data = raw ? JSON.parse(raw) : JSON.parse(JSON.stringify(DEFAULT_DATA));
-      const version = parseInt(await env.KANBAN.get(VERSION_KEY) || '0');
-      return new Response(JSON.stringify({ data, version }), {
+      return new Response(JSON.stringify({ data, version: currentVersion }), {
         headers: { 'Content-Type': 'application/json' }
       });
     }
@@ -765,7 +857,6 @@ export default {
       if (!body || typeof body.version !== 'number') {
         return new Response(JSON.stringify({ error: 'Missing version' }), { status: 400 });
       }
-      // Read current version from KV
       const currentVersion = parseInt(await env.KANBAN.get(VERSION_KEY) || '0');
       if (body.version !== currentVersion) {
         return new Response(JSON.stringify({ error: 'Conflict', currentVersion }), {
@@ -774,9 +865,59 @@ export default {
         });
       }
       const newVersion = currentVersion + 1;
-      // Write data and version
-      await env.KANBAN.put(KV_KEY, JSON.stringify(body.data));
+      // Save versioned data
+      await env.KANBAN.put(KV_KEY + '-v' + newVersion, JSON.stringify(body.data));
       await env.KANBAN.put(VERSION_KEY, String(newVersion));
+      // Update history
+      const historyRaw = await env.KANBAN.get(HISTORY_KEY);
+      let history = historyRaw ? JSON.parse(historyRaw) : [];
+      const cardCount = body.data.columns.reduce((s, c) => s + c.cards.length, 0);
+      history.unshift({ version: newVersion, timestamp: Date.now(), columnCount: body.data.columns.length, cardCount });
+      if (history.length > MAX_VERSIONS) history = history.slice(0, MAX_VERSIONS);
+      // Clean up old version beyond window
+      const oldestToDelete = newVersion - MAX_VERSIONS;
+      if (oldestToDelete > 0) {
+        ctx.waitUntil((async () => {
+          await env.KANBAN.delete(KV_KEY + '-v' + oldestToDelete);
+        })());
+      }
+      await env.KANBAN.put(HISTORY_KEY, JSON.stringify(history));
+      return new Response(JSON.stringify({ ok: true, version: newVersion }), {
+        headers: { 'Content-Type': 'application/json' }
+      });
+    }
+
+    // ── API: Get history ──
+    if (path === '/api/history' && request.method === 'GET') {
+      if (!authed) return new Response('Unauthorized', { status: 401 });
+      const raw = await env.KANBAN.get(HISTORY_KEY);
+      const history = raw ? JSON.parse(raw) : [];
+      return new Response(JSON.stringify(history), {
+        headers: { 'Content-Type': 'application/json' }
+      });
+    }
+
+    // ── API: Restore version ──
+    if (path === '/api/restore' && request.method === 'POST') {
+      if (!authed) return new Response('Unauthorized', { status: 401 });
+      const body = await request.json().catch(() => null);
+      if (!body || typeof body.version !== 'number') {
+        return new Response(JSON.stringify({ error: 'Missing version' }), { status: 400 });
+      }
+      const raw = await env.KANBAN.get(KV_KEY + '-v' + body.version);
+      if (!raw) return new Response(JSON.stringify({ error: 'Version not found' }), { status: 404 });
+      const data = JSON.parse(raw);
+      const currentVersion = parseInt(await env.KANBAN.get(VERSION_KEY) || '0');
+      const newVersion = currentVersion + 1;
+      await env.KANBAN.put(KV_KEY + '-v' + newVersion, JSON.stringify(data));
+      await env.KANBAN.put(VERSION_KEY, String(newVersion));
+      // Update history
+      const historyRaw = await env.KANBAN.get(HISTORY_KEY);
+      let history = historyRaw ? JSON.parse(historyRaw) : [];
+      const cardCount = data.columns.reduce((s, c) => s + c.cards.length, 0);
+      history.unshift({ version: newVersion, timestamp: Date.now(), columnCount: data.columns.length, cardCount, restoredFrom: body.version });
+      if (history.length > MAX_VERSIONS) history = history.slice(0, MAX_VERSIONS);
+      await env.KANBAN.put(HISTORY_KEY, JSON.stringify(history));
       return new Response(JSON.stringify({ ok: true, version: newVersion }), {
         headers: { 'Content-Type': 'application/json' }
       });
