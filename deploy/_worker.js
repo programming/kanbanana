@@ -6,6 +6,7 @@
 const KV_KEY = 'board-data';
 const VERSION_KEY = 'board-version';
 const HISTORY_KEY = 'board-history';
+const PASSWORD_KEY = 'password-hash';
 const MAX_VERSIONS = 10;
 
 // Default board data
@@ -289,6 +290,7 @@ body {
     <button class="btn btn-outline" onclick="document.getElementById('importFile').click()">⬆ Import</button>
     <input type="file" id="importFile" accept=".json" style="display:none" onchange="importBackup(event)">
     <button class="btn btn-primary" onclick="showAddCardModal()">+ Add Card</button>
+    <button class="btn btn-ghost" onclick="showChangePasswordModal()" title="Change password">⚙️</button>
   </div>
 </div>
 
@@ -802,6 +804,33 @@ async function restoreVersion(v) {
   toast('✅ Restored version ' + v);
 }
 
+function showChangePasswordModal() {
+  showModal(\`
+    <h2>Change Password</h2>
+    <div class="modal-field"><label>Current Password</label><input type="password" id="curPw" placeholder="Current password"></div>
+    <div class="modal-field"><label>New Password</label><input type="password" id="newPw" placeholder="New password"></div>
+    <div class="modal-actions">
+      <button class="btn btn-outline" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="changePassword()">Update</button>
+    </div>
+  \`);
+}
+
+async function changePassword() {
+  const cur = document.getElementById('curPw').value;
+  const nw = document.getElementById('newPw').value;
+  if (!cur || !nw) { toast('Please fill both fields'); return; }
+  const resp = await fetch('/api/change-password', {
+    method: 'POST',
+    body: JSON.stringify({ currentPassword: cur, newPassword: nw }),
+    headers: { 'Content-Type': 'application/json' }
+  });
+  const result = await resp.json();
+  if (!resp.ok) { toast('❌ ' + (result.error || 'Failed')); return; }
+  closeModal();
+  toast('✅ Password updated');
+}
+
 // ────────────────────────────── Keyboard shortcuts ──────────────────────────────
 document.addEventListener('keydown', e => {
   if ((e.ctrlKey || e.metaKey) && e.key === 'k') { e.preventDefault(); document.getElementById('searchInput').focus(); }
@@ -823,7 +852,10 @@ export default {
       const formData = await request.formData();
       const pw = formData.get('password') || '';
       const hashed = await hashPassword(pw);
-      if (hashed !== env.PASSWORD_HASH) {
+      // Check KV-stored password first, fall back to secret
+      const storedHash = await env.KANBAN.get(PASSWORD_KEY);
+      const validHash = storedHash || env.PASSWORD_HASH;
+      if (hashed !== validHash) {
         return new Response(LOGIN_HTML.replace('{{ERROR}}', 'Incorrect password. Please try again.').replace("style.display = 'block'", "style.display = 'block'; document.getElementById('error').style.display = 'block'"), {
           status: 401,
           headers: { 'Content-Type': 'text/html' }
@@ -838,6 +870,26 @@ export default {
 
     // ── Auth check for protected routes ──
     const authed = await isAuthed(request, env);
+
+    // ── API: Change password ──
+    if (path === '/api/change-password' && request.method === 'POST') {
+      if (!authed) return new Response('Unauthorized', { status: 401 });
+      const body = await request.json().catch(() => null);
+      if (!body || !body.currentPassword || !body.newPassword) {
+        return new Response(JSON.stringify({ error: 'Missing passwords' }), { status: 400 });
+      }
+      // Verify current password
+      const currentHash = await hashPassword(body.currentPassword);
+      const storedHash = await env.KANBAN.get(PASSWORD_KEY);
+      const validHash = storedHash || env.PASSWORD_HASH;
+      if (currentHash !== validHash) {
+        return new Response(JSON.stringify({ error: 'Current password is incorrect' }), { status: 403 });
+      }
+      // Store new password hash in KV
+      const newHash = await hashPassword(body.newPassword);
+      await env.KANBAN.put(PASSWORD_KEY, newHash);
+      return new Response(JSON.stringify({ ok: true }));
+    }
 
     // ── API: Get data ──
     if (path === '/api/data' && request.method === 'GET') {
