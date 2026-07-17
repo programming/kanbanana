@@ -84,7 +84,7 @@ button:hover{background:#4338ca}
 </head>
 <body>
 <div class="login-box">
-  <h1>📋 <span>Kanbanana</span></h1>
+  <h1>🍌 <span>Kanbanana</span></h1>
   <p>Enter password to continue</p>
   <form method="post" action="/login">
     <input type="password" name="password" placeholder="Password" autofocus required>
@@ -280,7 +280,7 @@ body {
 <body>
 
 <div class="header">
-  <h1>📋 <span>Kanbanana</span></h1>
+  <h1>🍌 <span>Kanbanana</span></h1>
   <div class="header-actions">
     <span class="save-status" id="saveStatus"></span>
     <input class="search-input" type="text" placeholder="🔍 Search cards..." id="searchInput">
