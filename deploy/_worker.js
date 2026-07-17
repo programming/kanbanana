@@ -279,7 +279,6 @@ body {
     <span class="save-status" id="saveStatus"></span>
     <input class="search-input" type="text" placeholder="🔍 Search cards..." id="searchInput">
     <button class="btn btn-primary" onclick="showAddCardModal()">+ Add Card</button>
-    <button class="btn btn-outline" onclick="resetBoard()">Reset</button>
   </div>
 </div>
 
@@ -323,16 +322,6 @@ async function saveData() {
   } catch (e) {
     document.getElementById('saveStatus').textContent = 'Save failed';
     document.getElementById('saveStatus').className = 'save-status saving';
-  }
-}
-
-async function resetBoard() {
-  if (confirm('Reset the board to default? All changes will be lost.')) {
-    data = JSON.parse(JSON.stringify(defaultData));
-    nextCardId = 1;
-    await saveData();
-    render();
-    toast('Board reset');
   }
 }
 

@@ -289,16 +289,6 @@ let nextCardId = 1;
   }));
 })();
 
-function resetBoard() {
-  if (confirm('Reset the board to default? All changes will be lost.')) {
-    data = JSON.parse(JSON.stringify(defaultData));
-    nextCardId = 1;
-    saveData();
-    render();
-    toast('Board reset');
-  }
-}
-
 // ────────────────────────────── Drag & Drop ──────────────────────────────
 let draggedCard = null;
 let dragSourceColId = null;
