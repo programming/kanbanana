@@ -1,0 +1,7 @@
+name = "kanbanana"
+pages_build_output_dir = "deploy"
+compatibility_date = "2024-07-15"
+
+[[kv_namespaces]]
+binding = "KANBAN"
+id = "f05cf2eb3c4f4ff8ab12cedb5c8b84a7"
