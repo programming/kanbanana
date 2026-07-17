@@ -290,7 +290,6 @@ body {
     <button class="btn btn-outline" onclick="document.getElementById('importFile').click()">⬆ Import</button>
     <input type="file" id="importFile" accept=".json" style="display:none" onchange="importBackup(event)">
     <button class="btn btn-primary" onclick="showAddCardModal()">+ Add Card</button>
-    <button class="btn btn-ghost" onclick="showChangePasswordModal()" title="Change password">⚙️</button>
   </div>
 </div>
 
