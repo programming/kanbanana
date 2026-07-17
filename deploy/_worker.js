@@ -655,7 +655,35 @@ document.addEventListener('DOMContentLoaded', async () => {
   await loadData();
   render();
   document.getElementById('searchInput').addEventListener('input', render);
+  startPolling();
 });
+
+// ────────────────────────────── Polling ──────────────────────────────
+let pollTimer = null;
+
+function startPolling() {
+  if (pollTimer) clearInterval(pollTimer);
+  pollTimer = setInterval(pollForChanges, 5000);
+}
+
+async function pollForChanges() {
+  // Don't poll while user is editing
+  if (document.activeElement && document.activeElement.isContentEditable) return;
+  if (document.activeElement && document.activeElement.tagName === 'INPUT') return;
+  if (document.activeElement && document.activeElement.tagName === 'TEXTAREA') return;
+  try {
+    const resp = await fetch(API);
+    if (!resp.ok) return;
+    const result = await resp.json();
+    if (result.version !== version) {
+      data = result.data;
+      version = result.version;
+      initNextId();
+      render();
+      toast('🔄 Board updated by someone else');
+    }
+  } catch (e) { /* network error, ignore */ }
+}
 
 // ────────────────────────────── Toast ──────────────────────────────
 function toast(msg) {
