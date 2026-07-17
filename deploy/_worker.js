@@ -1,4 +1,4 @@
-// Cloudflare Pages Worker for Kanban Board
+// Cloudflare Pages Worker for Kanbanana
 // - Auth via password (stored as secret)
 // - Board data persisted in Workers KV
 // - Serves the full SPA
@@ -64,7 +64,7 @@ const LOGIN_HTML = `<!DOCTYPE html>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Kanban Board - Login</title>
+<title>Kanbanana - Login</title>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#f0f2f5;display:flex;align-items:center;justify-content:center;min-height:100vh}
@@ -81,7 +81,7 @@ button:hover{background:#4338ca}
 </head>
 <body>
 <div class="login-box">
-  <h1>📋 <span>Kanban</span> Board</h1>
+  <h1>📋 <span>Kanbanana</span></h1>
   <p>Enter password to continue</p>
   <form method="post" action="/login">
     <input type="password" name="password" placeholder="Password" autofocus required>
@@ -102,7 +102,7 @@ const KANBAN_HTML = `<!DOCTYPE html>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Kanban Board</title>
+<title>Kanbanana</title>
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -277,7 +277,7 @@ body {
 <body>
 
 <div class="header">
-  <h1>📋 <span>Kanban</span> Board</h1>
+  <h1>📋 <span>Kanbanana</span></h1>
   <div class="header-actions">
     <span class="save-status" id="saveStatus"></span>
     <input class="search-input" type="text" placeholder="🔍 Search cards..." id="searchInput">
