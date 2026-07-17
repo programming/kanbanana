@@ -4,6 +4,7 @@
 // - Serves the full SPA
 
 const KV_KEY = 'board-data';
+const VERSION_KEY = 'board-version';
 
 // Default board data
 const DEFAULT_DATA = {
@@ -294,15 +295,19 @@ const API = '/api/data';
 const defaultData = ${JSON.stringify(DEFAULT_DATA)};
 
 let data = null;
+let version = 0;
 let nextCardId = 1;
 
 async function loadData() {
   try {
     const resp = await fetch(API);
     if (!resp.ok) throw new Error('Failed to load');
-    data = await resp.json();
+    const result = await resp.json();
+    data = result.data;
+    version = result.version;
   } catch (e) {
     data = JSON.parse(JSON.stringify(defaultData));
+    version = 0;
   }
   initNextId();
 }
@@ -318,7 +323,17 @@ async function saveData() {
   document.getElementById('saveStatus').textContent = 'Saving...';
   document.getElementById('saveStatus').className = 'save-status saving';
   try {
-    await fetch(API, { method: 'PUT', body: JSON.stringify(data) });
+    const resp = await fetch(API, { method: 'PUT', body: JSON.stringify({ data, version }), headers: { 'Content-Type': 'application/json' } });
+    if (resp.status === 409) {
+      document.getElementById('saveStatus').textContent = '⚠ Conflict — reloading...';
+      document.getElementById('saveStatus').className = 'save-status saving';
+      toast('Someone else made changes. Reloading...');
+      setTimeout(async () => { await loadData(); render(); }, 800);
+      return;
+    }
+    if (!resp.ok) throw new Error('Save failed');
+    const result = await resp.json();
+    version = result.version;
     document.getElementById('saveStatus').textContent = 'Saved ✓';
     document.getElementById('saveStatus').className = 'save-status saved';
     setTimeout(() => { document.getElementById('saveStatus').textContent = ''; }, 2000);
@@ -709,7 +724,8 @@ export default {
       if (!authed) return new Response('Unauthorized', { status: 401 });
       const raw = await env.KANBAN.get(KV_KEY);
       const data = raw ? JSON.parse(raw) : JSON.parse(JSON.stringify(DEFAULT_DATA));
-      return new Response(JSON.stringify(data), {
+      const version = parseInt(await env.KANBAN.get(VERSION_KEY) || '0');
+      return new Response(JSON.stringify({ data, version }), {
         headers: { 'Content-Type': 'application/json' }
       });
     }
@@ -717,9 +733,25 @@ export default {
     // ── API: Save data ──
     if (path === '/api/data' && request.method === 'PUT') {
       if (!authed) return new Response('Unauthorized', { status: 401 });
-      const body = await request.text();
-      await env.KANBAN.put(KV_KEY, body);
-      return new Response('ok');
+      const body = await request.json().catch(() => null);
+      if (!body || typeof body.version !== 'number') {
+        return new Response(JSON.stringify({ error: 'Missing version' }), { status: 400 });
+      }
+      // Read current version from KV
+      const currentVersion = parseInt(await env.KANBAN.get(VERSION_KEY) || '0');
+      if (body.version !== currentVersion) {
+        return new Response(JSON.stringify({ error: 'Conflict', currentVersion }), {
+          status: 409,
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
+      const newVersion = currentVersion + 1;
+      // Write data and version
+      await env.KANBAN.put(KV_KEY, JSON.stringify(body.data));
+      await env.KANBAN.put(VERSION_KEY, String(newVersion));
+      return new Response(JSON.stringify({ ok: true, version: newVersion }), {
+        headers: { 'Content-Type': 'application/json' }
+      });
     }
 
     // ── Serve app or login page ──
